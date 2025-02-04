@@ -56,26 +56,48 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push by digest
-        id: build
+      - name: Build and push runtime by digest
+        id: build-runtime
         uses: docker/build-push-action@v6
         with:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
+          target: runtime
           outputs: type=image,name=${{ env.GHCR_REPO }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             VERSION=${{ env.VERSION }}
-      - name: Export digest
+      - name: Build and push dev by digest
+        id: build-dev
+        uses: docker/build-push-action@v6
+        with:
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          target: dev
+          outputs: type=image,name=${{ env.GHCR_REPO }}-dev,push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            VERSION=${{ env.VERSION }}
+      - name: Export digests
         run: |
-          mkdir -p ${{ runner.temp }}/digests
-          digest="${{ steps.build.outputs.digest }}"
-          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+          mkdir -p ${{ runner.temp }}/digests/runtime
+          mkdir -p ${{ runner.temp }}/digests/dev
+          digest_runtime="${{ steps.build-runtime.outputs.digest }}"
+          digest_dev="${{ steps.build-dev.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/runtime/${digest_runtime#sha256:}"
+          touch "${{ runner.temp }}/digests/dev/${digest_dev#sha256:}"
 
-      - name: Upload digest
+      - name: Upload runtime digest
         uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ env.PLATFORM_PAIR }}
-          path: ${{ runner.temp }}/digests/*
+          name: digests-runtime-${{ env.PLATFORM_PAIR }}
+          path: ${{ runner.temp }}/digests/runtime/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload dev digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-dev-${{ env.PLATFORM_PAIR }}
+          path: ${{ runner.temp }}/digests/dev/*
           if-no-files-found: error
           retention-days: 1
 
@@ -84,11 +106,18 @@ jobs:
     needs:
       - build
     steps:
-      - name: Download digests
+      - name: Download runtime digests
         uses: actions/download-artifact@v4
         with:
-          path: ${{ runner.temp }}/digests
-          pattern: digests-*
+          path: ${{ runner.temp }}/digests/runtime
+          pattern: digests-runtime-*
+          merge-multiple: true
+
+      - name: Download dev digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests/dev
+          pattern: digests-dev-*
           merge-multiple: true
 
       - name: Login to GHCR
@@ -112,12 +141,19 @@ jobs:
             type=ref,event=pr
             type=ref,event=tag
 
-      - name: Create manifest list and push
-        working-directory: ${{ runner.temp }}/digests
+      - name: Create runtime manifest list and push
+        working-directory: ${{ runner.temp }}/digests/runtime
         run: |
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.GHCR_REPO }}@sha256:%s ' *)
 
-      - name: Inspect image
+      - name: Create dev manifest list and push
+        working-directory: ${{ runner.temp }}/digests/dev
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON" | sed 's/"$/-dev"/' ) \
+            $(printf '${{ env.GHCR_REPO }}-dev@sha256:%s ' *)
+
+      - name: Inspect images
         run: |
           docker buildx imagetools inspect ${{ env.GHCR_REPO }}:${{ steps.meta.outputs.version }}
+          docker buildx imagetools inspect ${{ env.GHCR_REPO }}-dev:${{ steps.meta.outputs.version }}
