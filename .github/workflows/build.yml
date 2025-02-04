@@ -150,10 +150,10 @@ jobs:
       - name: Create dev manifest list and push
         working-directory: ${{ runner.temp }}/digests/dev
         run: |
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON" | sed 's/"$/-dev"/' ) \
-            $(printf '${{ env.GHCR_REPO }}-dev@sha256:%s ' *)
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + . + "-dev") | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.GHCR_REPO }}@sha256:%s ' *)
 
       - name: Inspect images
         run: |
           docker buildx imagetools inspect ${{ env.GHCR_REPO }}:${{ steps.meta.outputs.version }}
-          docker buildx imagetools inspect ${{ env.GHCR_REPO }}-dev:${{ steps.meta.outputs.version }}
+          docker buildx imagetools inspect ${{ env.GHCR_REPO }}:${{ steps.meta.outputs.version }}-dev
