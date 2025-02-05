@@ -7,13 +7,18 @@ RUN apt-get update && apt-get install -y cmake clang
 
 ARG VERSION=main
 RUN git clone --depth=1 --branch ${VERSION} https://github.com/MystenLabs/sui
-WORKDIR "$WORKDIR/sui"
+WORKDIR /sui
 
 ARG PROFILE=release
 RUN cargo build --profile ${PROFILE} --bin sui
 
-# Production Image
 FROM debian:bullseye-slim AS runtime
 RUN apt-get update && apt-get install -y ca-certificates curl
-WORKDIR "$WORKDIR/sui"
+WORKDIR /sui
 COPY --from=builder /sui/target/release/sui /usr/local/bin
+
+# Development Image
+FROM runtime AS dev
+RUN apt-get update && \
+    apt-get install -yq ca-certificates curl git && \
+    rm -rf /var/lib/apt/lists/*
