@@ -5,7 +5,7 @@
 FROM rust:1.81-bullseye AS builder
 RUN apt-get update && apt-get install -y cmake clang
 
-ARG VERSION=main
+ARG VERSION=mainnet-v1.49.2
 RUN git clone --depth=1 --branch ${VERSION} https://github.com/MystenLabs/sui
 WORKDIR /sui
 
